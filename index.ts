@@ -325,7 +325,7 @@ const MOBILE_CLIENT_HTML = `<!DOCTYPE html>
           };
           reader.readAsDataURL(blob);
         }
-      }, 'image/jpeg', 0.7);
+      }, 'image/jpeg', 0.5);
 
       setTimeout(() => captureFrames(), 1000 / 15);
     }
@@ -514,6 +514,32 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
       color: #4CAF50;
       font-family: monospace;
     }
+
+    .person-alert {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(244, 67, 54, 0.9);
+      color: white;
+      padding: 15px 25px;
+      border-radius: 8px;
+      font-size: 18px;
+      font-weight: bold;
+      display: none;
+      z-index: 10;
+      text-align: center;
+    }
+
+    .person-alert.active {
+      display: block;
+      animation: fadeOut 3s forwards;
+    }
+
+    @keyframes fadeOut {
+      0%, 70% { opacity: 1; }
+      100% { opacity: 0; }
+    }
   </style>
 </head>
 <body>
@@ -568,6 +594,8 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
           updateCameraFrame(data.cameraId, data.frame, data.timestamp);
         } else if (data.type === 'camera-disconnected') {
           handleCameraDisconnected(data.cameraId);
+        } else if (data.type === 'person-alert') {
+          showPersonAlert(data.cameraId, data.count, data.confidence);
         }
       };
 
@@ -628,6 +656,7 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
             <div id="fps-\${cameraId}">0 fps</div>
             <div id="latency-\${cameraId}">0 ms</div>
           </div>
+          <div class="person-alert" id="alert-\${cameraId}"></div>
         </div>
       \`;
 
@@ -669,6 +698,16 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
       };
 
       img.src = 'data:image/jpeg;base64,' + frameBase64;
+    }
+
+    function showPersonAlert(cameraId, count, confidence) {
+      const alertEl = document.getElementById('alert-' + cameraId);
+      if (alertEl) {
+        alertEl.textContent = 'PERSON: ' + count + ' (' + confidence.toFixed(0) + '%)';
+        alertEl.classList.remove('active');
+        void alertEl.offsetWidth;
+        alertEl.classList.add('active');
+      }
     }
 
     function handleCameraDisconnected(cameraId) {
@@ -718,29 +757,44 @@ class PersonDetector {
   private cocoSsd: any = null;
   private tf: any = null;
   private isInitialized = false;
+  private initPromise: Promise<void> | null = null;
   private isProcessing = false;
+  private canvasModule: any = null;
 
   async initialize() {
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+
+    this.initPromise = this.doInitialize();
+    return this.initPromise;
+  }
+
+  private async doInitialize() {
     if (this.isInitialized) return;
 
     console.log("🤖 Initializing AI person detection...");
 
     try {
-      // Importar TensorFlow.js (versión web, compatible con Bun)
+      await import("@tensorflow/tfjs-backend-wasm");
       this.tf = await import("@tensorflow/tfjs");
       this.cocoSsd = await import("@tensorflow-models/coco-ssd");
+      this.canvasModule = await import("canvas");
 
-      // Cargar modelo COCO-SSD (detecta 80 objetos, incluidas personas)
+      await this.tf.setBackend("wasm");
+      await this.tf.ready();
+
       this.model = await this.cocoSsd.load({
-        base: "lite_mobilenet_v2", // Versión más rápida
+        base: "lite_mobilenet_v2",
       });
 
       this.isInitialized = true;
-      console.log("✅ AI Detection ready!");
+      console.log("✅ AI Detection ready (WASM backend)!");
     } catch (error) {
+      this.initPromise = null;
       console.error("❌ Error loading AI model:", error);
       console.error(
-        "💡 Run: bun add @tensorflow/tfjs @tensorflow-models/coco-ssd canvas",
+        "💡 Falling back to default backend",
       );
       throw error;
     }
@@ -752,7 +806,6 @@ class PersonDetector {
     confidence: number;
     boxes: Array<{ x: number; y: number; width: number; height: number }>;
   }> {
-    // Si ya está procesando, saltar este frame
     if (this.isProcessing) {
       return { hasPerson: false, count: 0, confidence: 0, boxes: [] };
     }
@@ -764,24 +817,25 @@ class PersonDetector {
     this.isProcessing = true;
 
     try {
-      // Importar canvas para decodificar la imagen
-      const { Image } = await import("canvas");
+      const { createCanvas, Image } = this.canvasModule;
 
-      // Convertir base64 a imagen
       const buffer = Buffer.from(frameBase64, "base64");
       const img = new Image();
 
-      // Cargar imagen de forma asíncrona
       await new Promise<void>((resolve, reject) => {
         img.onload = () => resolve();
-        img.onerror = (err) => reject(err);
+        img.onerror = (err: any) => reject(err);
         img.src = buffer;
       });
 
-      // Detectar objetos en la imagen
-      const predictions = await this.model.detect(img);
+      const canvas = createCanvas(300, 300);
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, 300, 300);
 
-      // Filtrar solo personas (class = 'person') con confianza > 50%
+      const tensor = this.tf.browser.fromPixels(canvas);
+      const predictions = await this.model.detect(tensor);
+      tensor.dispose();
+
       const persons = predictions.filter(
         (pred: any) => pred.class === "person" && pred.score > 0.5,
       );
@@ -825,8 +879,12 @@ class CameraSecurityServer {
   private cameras = new Map<string, CameraData>();
   private viewers = new Set<any>();
   private nextId = 1;
+  private detector: PersonDetector;
+  private lastDetectionTime = 0;
+  private detectionInterval = 2000;
 
   constructor() {
+    this.detector = new PersonDetector();
     this.start();
   }
 
@@ -985,7 +1043,7 @@ class CameraSecurityServer {
     });
   }
 
-  private broadcastFrame(cameraId: string, frame: string, timestamp: number) {
+  private async broadcastFrame(cameraId: string, frame: string, timestamp: number) {
     const message = JSON.stringify({
       type: "camera-frame-broadcast",
       cameraId,
@@ -1000,6 +1058,36 @@ class CameraSecurityServer {
         console.error("Error broadcasting frame:", error);
       }
     });
+
+    const now = Date.now();
+    if (now - this.lastDetectionTime >= this.detectionInterval) {
+      this.lastDetectionTime = now;
+      this.detector.detectPerson(frame).then((result) => {
+        if (result.hasPerson) {
+          console.log(`🚨 ALERT: Person detected on camera ${cameraId}!`);
+          
+          const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+          const filename = `alerts/${cameraId}_${timestamp}.jpg`;
+          const buffer = Buffer.from(frame, "base64");
+          Bun.write(filename, buffer);
+          console.log(`📸 Saved alert image: ${filename}`);
+
+          const alertMessage = JSON.stringify({
+            type: "person-alert",
+            cameraId,
+            count: result.count,
+            confidence: result.confidence,
+          });
+          this.viewers.forEach((viewer) => {
+            try {
+              viewer.send(alertMessage);
+            } catch (error) {
+              console.error("Error sending alert:", error);
+            }
+          });
+        }
+      });
+    }
   }
 
   private handleCameraDisconnect(id: string, ws: any) {
