@@ -713,6 +713,114 @@ interface CameraData {
   ws: any;
 }
 
+class PersonDetector {
+  private model: any = null;
+  private cocoSsd: any = null;
+  private tf: any = null;
+  private isInitialized = false;
+  private isProcessing = false;
+
+  async initialize() {
+    if (this.isInitialized) return;
+
+    console.log("🤖 Initializing AI person detection...");
+
+    try {
+      // Importar TensorFlow.js (versión web, compatible con Bun)
+      this.tf = await import("@tensorflow/tfjs");
+      this.cocoSsd = await import("@tensorflow-models/coco-ssd");
+
+      // Cargar modelo COCO-SSD (detecta 80 objetos, incluidas personas)
+      this.model = await this.cocoSsd.load({
+        base: "lite_mobilenet_v2", // Versión más rápida
+      });
+
+      this.isInitialized = true;
+      console.log("✅ AI Detection ready!");
+    } catch (error) {
+      console.error("❌ Error loading AI model:", error);
+      console.error(
+        "💡 Run: bun add @tensorflow/tfjs @tensorflow-models/coco-ssd canvas",
+      );
+      throw error;
+    }
+  }
+
+  async detectPerson(frameBase64: string): Promise<{
+    hasPerson: boolean;
+    count: number;
+    confidence: number;
+    boxes: Array<{ x: number; y: number; width: number; height: number }>;
+  }> {
+    // Si ya está procesando, saltar este frame
+    if (this.isProcessing) {
+      return { hasPerson: false, count: 0, confidence: 0, boxes: [] };
+    }
+
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    this.isProcessing = true;
+
+    try {
+      // Importar canvas para decodificar la imagen
+      const { Image } = await import("canvas");
+
+      // Convertir base64 a imagen
+      const buffer = Buffer.from(frameBase64, "base64");
+      const img = new Image();
+
+      // Cargar imagen de forma asíncrona
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = (err) => reject(err);
+        img.src = buffer;
+      });
+
+      // Detectar objetos en la imagen
+      const predictions = await this.model.detect(img);
+
+      // Filtrar solo personas (class = 'person') con confianza > 50%
+      const persons = predictions.filter(
+        (pred: any) => pred.class === "person" && pred.score > 0.5,
+      );
+
+      const hasPerson = persons.length > 0;
+      const avgConfidence =
+        persons.length > 0
+          ? persons.reduce((sum: number, p: any) => sum + p.score, 0) /
+            persons.length
+          : 0;
+
+      const boxes = persons.map((p: any) => ({
+        x: p.bbox[0],
+        y: p.bbox[1],
+        width: p.bbox[2],
+        height: p.bbox[3],
+      }));
+
+      if (hasPerson) {
+        console.log(
+          `👤 DETECTED: ${persons.length} person(s) - ${(avgConfidence * 100).toFixed(1)}% confidence`,
+        );
+      }
+
+      return {
+        hasPerson,
+        count: persons.length,
+        confidence: avgConfidence * 100,
+        boxes,
+      };
+    } catch (error) {
+      console.error("❌ Detection error:", error);
+      return { hasPerson: false, count: 0, confidence: 0, boxes: [] };
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+}
+
 class CameraSecurityServer {
   private cameras = new Map<string, CameraData>();
   private viewers = new Set<any>();
