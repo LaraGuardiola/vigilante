@@ -706,6 +706,7 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
     }
 
     function showPersonAlert(cameraId, count, confidence) {
+      playAlertSound();
       const alertEl = document.getElementById('alert-' + cameraId);
       if (alertEl) {
         alertEl.textContent = 'PERSON: ' + count + ' (' + confidence.toFixed(0) + '%)';
@@ -727,11 +728,28 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
       }
 
       if (cameras.size === 0) {
-        camerasGrid.innerHTML = '<div class="no-cameras">📱 No cameras connected</div>';
+      camerasGrid.innerHTML = '<div class="no-cameras">📱 No cameras connected</div>';
       }
     }
 
     init();
+
+    const enableSound = confirm('Enable sound effects for person detection alerts?');
+
+    const alertSound = new Audio('/sound-effect.mp3');
+    alertSound.addEventListener('canplaythrough', () => {
+      alertSound.dataset.duration = String(alertSound.duration * 1000);
+    });
+    let isAlertPlaying = false;
+
+    function playAlertSound() {
+      if (!enableSound || isAlertPlaying) return;
+      isAlertPlaying = true;
+      alertSound.currentTime = 0;
+      alertSound.play().catch(() => {});
+      const duration = parseInt(alertSound.dataset.duration) || 2000;
+      setTimeout(() => { isAlertPlaying = false; }, duration);
+    }
   </script>
 </body>
 </html>`;
@@ -797,9 +815,7 @@ class PersonDetector {
     } catch (error) {
       this.initPromise = null;
       console.error("❌ Error loading AI model:", error);
-      console.error(
-        "💡 Falling back to default backend",
-      );
+      console.error("💡 Falling back to default backend");
       throw error;
     }
   }
@@ -927,6 +943,12 @@ class CameraSecurityServer {
           }
 
           // Serve viewer client
+          if (url.pathname === "/sound-effect.mp3") {
+            return new Response(file("./sound-effect.mp3"), {
+              headers: { "Content-Type": "audio/mpeg" },
+            });
+          }
+
           return new Response(VIEWER_CLIENT_HTML(getLocalIP(), PORT), {
             headers: { "Content-Type": "text/html" },
           });
@@ -1053,7 +1075,7 @@ class CameraSecurityServer {
       this.detector.detectPerson(frame).then((result) => {
         if (result.hasPerson) {
           console.log(`🚨 ALERT: Person detected on camera ${cameraId}!`);
-          
+
           const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
           const filename = `alerts/${cameraId}_${timestamp}.jpg`;
           const buffer = Buffer.from(frame, "base64");
