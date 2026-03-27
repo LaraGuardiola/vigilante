@@ -318,8 +318,7 @@ const MOBILE_CLIENT_HTML = `<!DOCTYPE html>
             const base64 = reader.result.split(',')[1];
             sendMessage({
               type: 'camera-frame',
-              frame: base64,
-              timestamp: Date.now()
+              frame: base64
             });
             frameCount++;
           };
@@ -327,7 +326,7 @@ const MOBILE_CLIENT_HTML = `<!DOCTYPE html>
         }
       }, 'image/jpeg', 0.5);
 
-      setTimeout(() => captureFrames(), 1000 / 15);
+      setTimeout(() => captureFrames(), 1000 / 30);
     }
 
     function stopStreaming() {
@@ -400,7 +399,7 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
       background: #1a1a1a;
       color: #fff;
       min-height: 100dvh;
-      padding-bottom: 20px;
+      overflow-x: hidden;
     }
 
     #status-bar {
@@ -423,14 +422,23 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
 
     #cameras-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-      max-width: 1400px;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      max-width: 100%;
       margin: 0 auto;
+      box-sizing: border-box;
+      padding: 16px;
     }
 
     @media (min-width: 768px) {
       #cameras-grid {
-        grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+        grid-template-columns: 1fr;
+        max-width: 1000px;
+      }
+
+      #cameras-grid:not(:has(.camera-card:only-child)) {
+        grid-template-columns: repeat(2, 1fr);
+        max-width: 1400px;
       }
     }
 
@@ -439,7 +447,6 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
       border-radius: 12px;
       overflow: hidden;
       box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      margin: 1em;
     }
 
     .camera-header {
@@ -591,7 +598,7 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
         if (data.type === 'camera-list') {
           handleCameraList(data.cameras);
         } else if (data.type === 'camera-frame-broadcast') {
-          updateCameraFrame(data.cameraId, data.frame, data.timestamp);
+          updateCameraFrame(data.cameraId, data.frame);
         } else if (data.type === 'camera-disconnected') {
           handleCameraDisconnected(data.cameraId);
         } else if (data.type === 'person-alert') {
@@ -654,7 +661,6 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
           <canvas class="camera-canvas" id="canvas-\${cameraId}"></canvas>
           <div class="camera-stats">
             <div id="fps-\${cameraId}">0 fps</div>
-            <div id="latency-\${cameraId}">0 ms</div>
           </div>
           <div class="person-alert" id="alert-\${cameraId}"></div>
         </div>
@@ -676,7 +682,7 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
       cameras.set(cameraId, { card, fpsInterval });
     }
 
-    function updateCameraFrame(cameraId, frameBase64, timestamp) {
+    function updateCameraFrame(cameraId, frameBase64) {
       const canvas = document.getElementById('canvas-' + cameraId);
       if (!canvas) return;
 
@@ -687,12 +693,6 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
         canvas.width = img.width;
         canvas.height = img.height;
         ctx.drawImage(img, 0, 0);
-
-        const latency = Date.now() - timestamp;
-        const latencyEl = document.getElementById('latency-' + cameraId);
-        if (latencyEl) {
-          latencyEl.textContent = latency + ' ms';
-        }
 
         canvas.frameCount++;
       };
@@ -754,7 +754,6 @@ interface CameraData {
 
 class PersonDetector {
   private model: any = null;
-  private cocoSsd: any = null;
   private tf: any = null;
   private isInitialized = false;
   private initPromise: Promise<void> | null = null;
@@ -778,13 +777,13 @@ class PersonDetector {
     try {
       await import("@tensorflow/tfjs-backend-wasm");
       this.tf = await import("@tensorflow/tfjs");
-      this.cocoSsd = await import("@tensorflow-models/coco-ssd");
+      const cocoSsd = await import("@tensorflow-models/coco-ssd");
       this.canvasModule = await import("canvas");
 
       await this.tf.setBackend("wasm");
       await this.tf.ready();
 
-      this.model = await this.cocoSsd.load({
+      this.model = await cocoSsd.load({
         base: "lite_mobilenet_v2",
       });
 
@@ -804,10 +803,9 @@ class PersonDetector {
     hasPerson: boolean;
     count: number;
     confidence: number;
-    boxes: Array<{ x: number; y: number; width: number; height: number }>;
   }> {
     if (this.isProcessing) {
-      return { hasPerson: false, count: 0, confidence: 0, boxes: [] };
+      return { hasPerson: false, count: 0, confidence: 0 };
     }
 
     if (!this.isInitialized) {
@@ -847,28 +845,14 @@ class PersonDetector {
             persons.length
           : 0;
 
-      const boxes = persons.map((p: any) => ({
-        x: p.bbox[0],
-        y: p.bbox[1],
-        width: p.bbox[2],
-        height: p.bbox[3],
-      }));
-
-      if (hasPerson) {
-        console.log(
-          `👤 DETECTED: ${persons.length} person(s) - ${(avgConfidence * 100).toFixed(1)}% confidence`,
-        );
-      }
-
       return {
         hasPerson,
         count: persons.length,
         confidence: avgConfidence * 100,
-        boxes,
       };
     } catch (error) {
       console.error("❌ Detection error:", error);
-      return { hasPerson: false, count: 0, confidence: 0, boxes: [] };
+      return { hasPerson: false, count: 0, confidence: 0 };
     } finally {
       this.isProcessing = false;
     }
@@ -993,7 +977,7 @@ class CameraSecurityServer {
           break;
 
         case "camera-frame":
-          this.broadcastFrame(ws.id, data.frame, data.timestamp);
+          this.broadcastFrame(ws.id, data.frame);
           break;
 
         case "stop-camera":
@@ -1043,12 +1027,11 @@ class CameraSecurityServer {
     });
   }
 
-  private async broadcastFrame(cameraId: string, frame: string, timestamp: number) {
+  private async broadcastFrame(cameraId: string, frame: string) {
     const message = JSON.stringify({
       type: "camera-frame-broadcast",
       cameraId,
       frame,
-      timestamp,
     });
 
     this.viewers.forEach((viewer) => {
