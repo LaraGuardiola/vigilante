@@ -160,7 +160,7 @@ const MOBILE_CLIENT_HTML = `<!DOCTYPE html>
   <div id="video-container">
     <video id="video" autoplay playsinline muted></video>
     <div id="stats">
-      <div id="stat-fps">📊 0 fps</div>
+      <div id="stat-fps">📊 -- fps</div>
       <div id="stat-sent">📤 0 frames</div>
     </div>
   </div>
@@ -660,7 +660,7 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
         <div class="camera-view">
           <canvas class="camera-canvas" id="canvas-\${cameraId}"></canvas>
           <div class="camera-stats">
-            <div id="fps-\${cameraId}">0 fps</div>
+            <div id="fps-\${cameraId}">-- fps</div>
           </div>
           <div class="person-alert" id="alert-\${cameraId}"></div>
         </div>
@@ -670,12 +670,16 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
 
       const canvas = document.getElementById('canvas-' + cameraId);
       canvas.frameCount = 0;
+      canvas.hasReceivedFrames = false;
 
       const fpsInterval = setInterval(() => {
         const fpsEl = document.getElementById('fps-' + cameraId);
         if (fpsEl) {
-          fpsEl.textContent = canvas.frameCount + ' fps';
+          if (canvas.hasReceivedFrames) {
+            fpsEl.textContent = canvas.frameCount + ' fps';
+          }
           canvas.frameCount = 0;
+          canvas.hasReceivedFrames = false;
         }
       }, 1000);
 
@@ -695,6 +699,7 @@ const VIEWER_CLIENT_HTML = (localIP: string, port: number) => `<!DOCTYPE html>
         ctx.drawImage(img, 0, 0);
 
         canvas.frameCount++;
+        canvas.hasReceivedFrames = true;
       };
 
       img.src = 'data:image/jpeg;base64,' + frameBase64;
@@ -865,7 +870,7 @@ class CameraSecurityServer {
   private nextId = 1;
   private detector: PersonDetector;
   private lastDetectionTime = 0;
-  private detectionInterval = 2000;
+  private detectionInterval = 1000;
 
   constructor() {
     this.detector = new PersonDetector();
