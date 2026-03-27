@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Security Cameras</title>
+  <link rel="stylesheet" href="/vigilante.css">
+  <style>
+    html, body {
+      min-height: 100dvh;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+    }
+    #cameras-grid {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="status-bar">🟢 HTTPS server active</div>
+
+  <div id="cameras-grid">
+    <div class="no-cameras">
+      <p>📱 No cameras connected</p>
+      <p style="margin-top: 15px; font-size: 16px;">
+        Access from your mobile at:<br>
+        <strong id="camera-url" style="font-size: 18px; margin-top: 10px; display: inline-block;">
+          Loading...
+        </strong>
+      </p>
+      <p style="margin-top: 10px; font-size: 13px; color: #666;">
+        ⚠️ Accept the certificate when prompted by your browser
+      </p>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ViewerClient } from '/vigilante.ts';
+
+    const camerasGrid = document.getElementById('cameras-grid');
+    const cameraUrlEl = document.getElementById('camera-url');
+
+    const client = new ViewerClient({
+      camerasGrid,
+      cameraUrlEl,
+    });
+
+    client.init();
+  </script>
+</body>
+</html>

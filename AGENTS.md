@@ -4,11 +4,31 @@ This file provides guidelines for agentic coding agents operating in this reposi
 
 ## Project Overview
 
-Vigilante is a TypeScript/Bun-based security camera streaming server. It serves:
-- A mobile client (`/camera`) for streaming camera feeds
-- A viewer client (root URL) for viewing multiple camera streams
-- WebSocket-based real-time communication
-- AI-powered person detection using TensorFlow.js
+Vigilante is a Bun-based security camera streaming server with real-time video monitoring and AI-powered person detection.
+
+### Features
+- **Mobile client** (`/camera`) - Stream camera feeds from mobile devices
+- **Viewer client** (root URL) - View multiple camera streams on PC
+- **Real-time streaming** - WebSocket-based low-latency video transmission
+- **AI person detection** - TensorFlow.js with COCO-SSD model
+- **Alert system** - Sound alerts and visual notifications when persons are detected
+- **HTTPS** - Secure communication with SSL/TLS certificates
+
+### Architecture
+
+```
+vigilante/
+├── index.ts              # Server (Bun + WebSocket + TensorFlow.js)
+├── public/               # Frontend static files
+│   ├── index.html       # Viewer client (PC browser)
+│   ├── camera.html      # Mobile camera client
+│   ├── vigilante.css    # Shared styles
+│   └── vigilante.js     # Client-side TypeScript (compiled to JS)
+├── certs/               # SSL certificates
+│   ├── key.pem
+│   └── cert.pem
+└── alerts/              # Saved detection screenshots
+```
 
 ## Build & Run Commands
 
@@ -23,8 +43,10 @@ bun run index.ts
 ```
 
 ### Type Checking
+Bun has built-in TypeScript support. No tsconfig.json needed - Bun transpiles TypeScript natively.
+
 ```bash
-bun tsc --noEmit
+bun run index.ts   # Runs and transpiles automatically
 ```
 
 ### Testing
@@ -41,31 +63,29 @@ No linter is currently configured. Consider adding ESLint or Biome if needed.
 ## Code Style Guidelines
 
 ### Language & Runtime
-- **Runtime**: Bun (use Bun APIs like `Bun.serve`, `file()`, etc.)
-- **TypeScript**: Strict mode enabled in `tsconfig.json`
+- **Runtime**: Bun (use Bun APIs like `Bun.serve`, `file()`, `Bun.Transpiler`, etc.)
+- **TypeScript**: Native support - no tsconfig.json needed
 
 ### File Organization
-- Single main entry point: `index.ts`
-- Keep related code in the same file unless it grows significantly
+- Server code: `index.ts` (main entry point)
+- Frontend: Static files in `public/` directory
 - Certificate files in `./certs/` directory
+- Alert images saved to `./alerts/` directory
 
 ### TypeScript Conventions
 
 **Types & Interfaces**
 ```typescript
-// Use interfaces for object shapes
 interface CameraData {
   name: string;
   resolution: string;
   ws: any;
 }
 
-// Use explicit return types for public methods
 async detectPerson(frameBase64: string): Promise<{
   hasPerson: boolean;
   count: number;
   confidence: number;
-  boxes: Array<{ x: number; y: number; width: number; height: number }>;
 }> {
   // ...
 }
@@ -74,7 +94,6 @@ async detectPerson(frameBase64: string): Promise<{
 **Type Annotations**
 - Use explicit types for function parameters and return types
 - Use `any` sparingly - prefer explicit types when possible
-- Enable strict TypeScript settings in tsconfig.json
 
 ### Naming Conventions
 
@@ -126,11 +145,11 @@ try {
   - 📱 Mobile/Camera events
   - 🖥️ Server events
   - 🔐 Security/Certificates
+  - 🚨 Alerts
 
 ### WebSocket Patterns
 
 ```typescript
-// Server WebSocket handling
 Bun.serve({
   websocket: {
     open: (ws) => { /* client connected */ },
@@ -144,28 +163,47 @@ Bun.serve({
 - Use JSON for message serialization
 - Include message types in payloads (`{ type: "...", ... }`)
 
-### HTML/CSS in TypeScript
+### Frontend Development
 
-- Store HTML templates as template literals
-- Use inline styles for embedded HTML
-- Keep CSS minimal and embedded in the HTML
+**File Structure**
+- `public/index.html` - Viewer client (main page)
+- `public/camera.html` - Mobile camera streaming page
+- `public/vigilante.css` - Shared styles
+- `public/vigilante.ts` - ES module with `CameraClient` and `ViewerClient` classes (served as JS via Bun.Transpiler)
+
+**CSS Guidelines**
+- Use CSS variables for colors and spacing
+- Mobile-first responsive design
+- Use `100dvh` for full viewport height on mobile
+- Use flexbox for layout (body: flex column)
+- Media queries for desktop (`min-width: 768px`)
+
+**TypeScript Guidelines**
+- Use ES modules (`<script type="module">`)
+- Export classes: `CameraClient`, `ViewerClient`
+- Bun transpiles `.ts` to JavaScript automatically on serve
+- Handle WebSocket reconnection with exponential backoff
+- Use `localStorage` for persisting user preferences
 
 ### AI/ML Integration
 
 - Load models lazily (only when needed)
 - Handle model loading errors gracefully
 - Provide fallback behavior when AI is unavailable
+- Use WASM backend for better performance
 
 ## Common Tasks
 
 ### Adding a New WebSocket Message Type
-1. Add the case to the switch in `handleWebSocketMessage`
+1. Add the case to the switch in `handleWebSocketMessage` in `index.ts`
 2. Define the expected data shape
-3. Handle the message in both client and server
+3. Handle the message in both client (`vigilante.ts`) and server (`index.ts`)
 
 ### Modifying the UI
-- Mobile client: Edit `MOBILE_CLIENT_HTML` constant
-- Viewer client: Edit `VIEWER_CLIENT_HTML` constant (uses a function to inject localIP/port)
+- Mobile client: Edit `public/camera.html`
+- Viewer client: Edit `public/index.html`
+- Styles: Edit `public/vigilante.css`
+- Client logic: Edit `public/vigilante.ts`
 
 ### Changing the Port
 Update the `PORT` constant at the top of `index.ts`
@@ -174,3 +212,8 @@ Update the `PORT` constant at the top of `index.ts`
 ```bash
 bun add <package>
 ```
+
+### Setting up SSL Certificates
+1. Create `certs/` directory in project root
+2. Add `key.pem` and `cert.pem` files
+3. Server will fail to start if certificates are missing

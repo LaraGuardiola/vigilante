@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>📹 Security Camera</title>
+  <link rel="stylesheet" href="/vigilante.css">
+  <style>
+    html, body {
+      overflow: hidden;
+      position: fixed;
+    }
+  </style>
+</head>
+<body>
+  <div id="status">
+    <span class="status-dot" id="status-dot"></span>
+    <span id="status-text">Disconnected</span>
+  </div>
+
+  <div id="video-container">
+    <video id="video" autoplay playsinline muted></video>
+    <div id="stats">
+      <div id="stat-fps">📊 -- fps</div>
+      <div id="stat-sent">📤 0 frames</div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <input type="text" id="camera-name" placeholder="Camera name (e.g. Living Room)" value="My Camera">
+    <button id="btn-start" class="btn-primary">📹 Start Streaming</button>
+    <div class="button-row" style="display:none" id="active-controls">
+      <button id="btn-stop" class="btn-danger">⏹ Stop</button>
+      <button id="btn-flip" class="btn-secondary">🔄 Flip</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { CameraClient } from '/vigilante.ts';
+
+    const video = document.getElementById('video');
+    const btnStart = document.getElementById('btn-start');
+    const btnStop = document.getElementById('btn-stop');
+    const btnFlip = document.getElementById('btn-flip');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const cameraNameInput = document.getElementById('camera-name');
+
+    const client = new CameraClient({
+      video,
+      statusDot,
+      statusText,
+      cameraNameInput,
+    });
+
+    btnStart.addEventListener('click', () => client.startStreaming());
+    btnStop.addEventListener('click', () => client.stopStreaming());
+    btnFlip.addEventListener('click', () => client.flipCamera());
+
+    client.init();
+  </script>
+</body>
+</html>
