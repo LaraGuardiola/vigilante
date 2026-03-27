@@ -3,6 +3,8 @@ import { file } from "bun";
 
 const PORT = 5174;
 const CERTS_DIR = "./certs";
+const SOUND_EFFECT = "./assets/sound-effect.mp3";
+const DETECTION_INTERVAL = 1000;
 
 function getLocalIP(): string {
   const nets = networkInterfaces();
@@ -130,16 +132,19 @@ class PersonDetector {
   }
 }
 
-async function serveStaticFile(path: string, contentType: string): Promise<Response> {
+async function serveStaticFile(
+  path: string,
+  contentType: string,
+): Promise<Response> {
   try {
     const f = file(path);
     if (await f.exists()) {
-      if (path.endsWith('.ts')) {
+      if (path.endsWith(".ts")) {
         const source = await f.text();
-        const transpiler = new Bun.Transpiler({ loader: 'ts' });
+        const transpiler = new Bun.Transpiler({ loader: "ts" });
         const transpiled = await transpiler.transform(source);
-        return new Response(transpiled, { 
-          headers: { "Content-Type": "application/javascript" } 
+        return new Response(transpiled, {
+          headers: { "Content-Type": "application/javascript" },
         });
       }
       return new Response(f, { headers: { "Content-Type": contentType } });
@@ -154,7 +159,7 @@ class CameraSecurityServer {
   private nextId = 1;
   private detector: PersonDetector;
   private lastDetectionTime = 0;
-  private detectionInterval = 1000;
+  private detectionInterval = DETECTION_INTERVAL;
 
   constructor() {
     this.detector = new PersonDetector();
@@ -217,7 +222,7 @@ class CameraSecurityServer {
           }
 
           if (url.pathname === "/sound-effect.mp3") {
-            return serveStaticFile("./sound-effect.mp3", "audio/mpeg");
+            return serveStaticFile(SOUND_EFFECT, "audio/mpeg");
           }
 
           return new Response("Not Found", { status: 404 });

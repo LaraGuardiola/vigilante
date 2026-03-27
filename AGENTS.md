@@ -27,6 +27,8 @@ vigilante/
 ├── certs/               # SSL certificates
 │   ├── key.pem
 │   └── cert.pem
+├── assets/              # Audio files
+│   └── sound-effect.mp3
 └── alerts/              # Saved detection screenshots
 ```
 
@@ -205,8 +207,12 @@ Bun.serve({
 - Styles: Edit `public/vigilante.css`
 - Client logic: Edit `public/vigilante.ts`
 
-### Changing the Port
-Update the `PORT` constant at the top of `index.ts`
+### Changing Configuration
+These constants are defined at the top of `index.ts`:
+- `PORT` - Server port (default: 5174)
+- `CERTS_DIR` - SSL certificates directory
+- `SOUND_EFFECT` - Path to alert sound file
+- `DETECTION_INTERVAL` - AI detection interval in ms (default: 1000)
 
 ### Adding Dependencies
 ```bash
